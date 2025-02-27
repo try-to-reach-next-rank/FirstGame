@@ -1,7 +1,10 @@
 # depslib dependency file v1.0
-1739202637 source:f:\baitaplon\main.cpp
-	<iostream>
+1740633575 source:f:\baitaplon\main.cpp
 	<SDL.h>
+	<SDL_ttf.h>
+	<SDL_mixer.h>
+	<SDL_image.h>
+	<bits/stdc++.h>
 
 1698944750 c:\users\admin\downloads\sdl2-devel-2.28.5-mingw\sdl2-2.28.5\x86_64-w64-mingw32\include\sdl2\sdl.h
 	"SDL_main.h"

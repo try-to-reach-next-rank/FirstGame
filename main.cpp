@@ -1,106 +1,151 @@
-#include <bits/stdc++.h>
 #include <SDL.h>
+#include <SDL_ttf.h>
+#include <SDL_mixer.h>
+#include <SDL_image.h>
+#include <bits/stdc++.h>
 
 using namespace std;
 
+const int SCREEN_WIDTH = 1280;
+const int SCREEN_HEIGHT = 720;
+const char* SCREEN_TITLE = "CeadHup";
 
-// add some comment
-const int SCREEN_WIDTH = 800;
-const int SCREEN_HEIGHT = 600;
-const char* WINDOW_TITLE = "Hello World!";
+enum GameState { MENU, PLAYING, GUIDE, EXIT };
 
-struct Entity{
-    int x,y,w,h;
-    int dx, dy;
-    int health;
-};
+SDL_Window* window = nullptr;
+SDL_Renderer* renderer = nullptr;
+SDL_Texture* backgroundTexture = nullptr;
+TTF_Font* font = nullptr;
+Mix_Music* bgm = nullptr;
+GameState gameState = MENU;
+int selectedOption = 0;
 
-void logErrorAndExit(const char* msg, const char* error)
-{
-    SDL_LogMessage(SDL_LOG_CATEGORY_APPLICATION, SDL_LOG_PRIORITY_ERROR, "%s: %s", msg, error);
-    SDL_Quit();
+
+SDL_Texture* loadTexture(const char* path) {
+    SDL_Texture* texture = nullptr;
+    SDL_Surface* surface = IMG_Load(path);
+    if (!surface) {
+        std::cerr << "Failed to load image: " << IMG_GetError() << std::endl;
+        return nullptr;
+    }
+    texture = SDL_CreateTextureFromSurface(renderer, surface);
+    SDL_FreeSurface(surface);
+    return texture;
 }
 
-SDL_Window* initSDL(int SCREEN_WIDTH, int SCREEN_HEIGHT, const char* WINDOW_TITLE)
-{
-    if (SDL_Init(SDL_INIT_EVERYTHING) != 0)
-        logErrorAndExit("SDL_Init", SDL_GetError());
+bool initSDL() {
+    if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO) < 0) return false;
+    if (TTF_Init() == -1) return false;
+    if (Mix_OpenAudio(44100, MIX_DEFAULT_FORMAT, 2, 2048) < 0) return false;
+    if (!(IMG_Init(IMG_INIT_PNG) & IMG_INIT_PNG)) return false;
 
-    SDL_Window* window = SDL_CreateWindow(WINDOW_TITLE, SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, SCREEN_WIDTH, SCREEN_HEIGHT, SDL_WINDOW_SHOWN);
-    //full screen
-    //window = SDL_CreateWindow(WINDOW_TITLE, SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, SCREEN_WIDTH, SCREEN_HEIGHT, SDL_WINDOW_FULLSCREEN_DESKTOP);
-    if (window == nullptr) logErrorAndExit("CreateWindow", SDL_GetError());
+    window = SDL_CreateWindow(SCREEN_TITLE, SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, SCREEN_WIDTH, SCREEN_HEIGHT, SDL_WINDOW_SHOWN);
+    if (!window) return false;
 
-    return window;
+    renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_ACCELERATED);
+    if (!renderer) return false;
+
+    font = TTF_OpenFont("AlegreyaSansSC-Light.ttf", 64);
+    if (!font) return false;
+
+    bgm = Mix_LoadMUS("01 The Delicious Last Course.mp3");
+    if (!bgm) return false;
+    Mix_PlayMusic(bgm, -1);
+
+    backgroundTexture = loadTexture("DALL·E-2025-02-25-16.05.png");
+    if (!backgroundTexture) return false;
+
+    return true;
 }
 
-SDL_Renderer* createRenderer(SDL_Window* window)
-{
-    SDL_Renderer* renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_ACCELERATED |
-                                              SDL_RENDERER_PRESENTVSYNC);
-    //Khi chạy trong máy ảo (ví dụ phòng máy ở trường)
-    //renderer = SDL_CreateSoftwareRenderer(SDL_GetWindowSurface(window));
-
-    if (renderer == nullptr) logErrorAndExit("CreateRenderer", SDL_GetError());
-
-    SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY, "linear");
-    SDL_RenderSetLogicalSize(renderer, SCREEN_WIDTH, SCREEN_HEIGHT);
-
-    return renderer;
+// Hàm hiển thị văn bản
+void renderText(const char* text, int x, int y, bool isSelected) {
+    SDL_Color color = isSelected ? SDL_Color{255, 255, 0, 255} : SDL_Color{255, 255, 255, 255};
+    SDL_Surface* surface = TTF_RenderText_Solid(font, text, color);
+    SDL_Texture* texture = SDL_CreateTextureFromSurface(renderer, surface);
+    SDL_Rect rect = { x, y, surface->w, surface->h };
+    SDL_RenderCopy(renderer, texture, NULL, &rect);
+    SDL_FreeSurface(surface);
+    SDL_DestroyTexture(texture);
 }
 
-void quitSDL(SDL_Window* window, SDL_Renderer* renderer)
-{
-    SDL_DestroyRenderer(renderer);
-    SDL_DestroyWindow(window);
-    SDL_Quit();
+void renderMenu() {
+    SDL_RenderClear(renderer);
+
+    SDL_RenderCopy(renderer, backgroundTexture, NULL, NULL);
+
+    const char* menuItems[] = { "Play", "Guide", "Exit" };
+    int centerX = SCREEN_WIDTH / 2 - 50;
+    int startY = SCREEN_HEIGHT / 2 - 50 ;
+
+    for (int i = 0; i < 3; ++i) {
+        renderText(menuItems[i], centerX, startY + i * 50, selectedOption == i);
+    }
+
+    SDL_RenderPresent(renderer);
 }
 
-void waitUntilKeyPressed()
-{
+void handleMenuEvents(bool& running) {
     SDL_Event e;
-    while (true) {
-        if ( SDL_PollEvent(&e) != 0 &&
-             (e.type == SDL_KEYDOWN || e.type == SDL_QUIT) )
-            return;
-        SDL_Delay(100);
+    while (SDL_PollEvent(&e)) {
+        if (e.type == SDL_QUIT) { running = false; return; }
+        if (e.type == SDL_KEYDOWN) {
+            if (e.key.keysym.sym == SDLK_UP) selectedOption = (selectedOption > 0) ? selectedOption - 1 : 2;
+            if (e.key.keysym.sym == SDLK_DOWN) selectedOption = (selectedOption < 2) ? selectedOption + 1 : 0;
+            if (e.key.keysym.sym == SDLK_RETURN) {
+                if (selectedOption == 0) gameState = PLAYING;
+                if (selectedOption == 1) std::cout << "Show Guide\n";
+                if (selectedOption == 2) running = false;
+            }
+        }
     }
 }
 
-void drawSomething(SDL_Window* window, SDL_Renderer* renderer) {
-    SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255);   // white
-    SDL_RenderDrawPoint(renderer, SCREEN_WIDTH/2, SCREEN_HEIGHT/2);
-    SDL_SetRenderDrawColor(renderer, 255, 0, 0, 255);   // red
-    SDL_RenderDrawLine(renderer, 100, 100, 200, 200);
-    SDL_Rect filled_rect;
-    filled_rect.x = SCREEN_WIDTH - 400;
-    filled_rect.y = SCREEN_HEIGHT - 150;
-    filled_rect.w = 320;
-    filled_rect.h = 100;
-    SDL_SetRenderDrawColor(renderer, 0, 255, 0, 255); // green
-    SDL_RenderFillRect(renderer, &filled_rect);
+void renderGame() {
+    SDL_SetRenderDrawColor(renderer, 50, 50, 255, 255);
+    SDL_RenderClear(renderer);
+    renderText("Game is running... Press ESC to return", SCREEN_WIDTH / 2 - 200, SCREEN_HEIGHT / 2, false);
+    SDL_RenderPresent(renderer);
 }
 
-int main(int argc, char* argv[])
-{
-    //Khởi tạo môi trường đồ họa
-    SDL_Window* window = initSDL(SCREEN_WIDTH, SCREEN_HEIGHT, WINDOW_TITLE);
-    SDL_Renderer* renderer = createRenderer(window);
+void handleGameEvents(bool& running) {
+    SDL_Event e;
+    while (SDL_PollEvent(&e)) {
+        if (e.type == SDL_QUIT) { running = false; return; }
+        if (e.type == SDL_KEYDOWN && e.key.keysym.sym == SDLK_ESCAPE) {
+            gameState = MENU;
+        }
+    }
+}
 
-    //Xóa màn hình
-    SDL_RenderClear(renderer);
+// Hàm chính
+int main(int argc, char* argv[]) {
+    if (!initSDL()) {
+        std::cerr << "Failed to initialize SDL\n";
+        return -1;
+    }
 
-    //Vẽ gì đó
-    drawSomething(window, renderer);
+    bool running = true;
+    while (running) {
+        if (gameState == MENU) {
+            handleMenuEvents(running);
+            renderMenu();
+        } else if (gameState == PLAYING) {
+            handleGameEvents(running);
+            renderGame();
+        }
+        SDL_Delay(16);
+    }
 
-    //Hiện bản vẽ ra màn hình
-    //Khi chạy tại môi trường bình thường
-    SDL_RenderPresent(renderer);
-    //Khi chạy trong máy ảo (ví dụ phòng máy ở trường)
-    //SDL_UpdateWindowSurface(window);
+    SDL_DestroyTexture(backgroundTexture);
+    Mix_FreeMusic(bgm);
+    TTF_CloseFont(font);
+    SDL_DestroyRenderer(renderer);
+    SDL_DestroyWindow(window);
+    Mix_CloseAudio();
+    TTF_Quit();
+    IMG_Quit();
+    SDL_Quit();
 
-    //Đợi phím bất kỳ trước khi đóng môi trường đồ họa và kết thúc chương trình
-    waitUntilKeyPressed();
-    quitSDL(window, renderer);
     return 0;
 }
